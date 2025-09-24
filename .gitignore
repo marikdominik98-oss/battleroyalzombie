@@ -1,0 +1,5 @@
+node_modules/
+.DS_Store
+*.copy.*
+battle-royale copy.html
+erver copy.js

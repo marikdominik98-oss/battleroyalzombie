@@ -106,16 +106,56 @@
         .player-waiting {
             color: #ffff00;
         }
+        input, select {
+            padding: 10px;
+            margin: 5px;
+            border: 1px solid #444;
+            background: #333;
+            color: white;
+            border-radius: 5px;
+        }
+        label {
+            display: block;
+            margin: 10px 0 5px;
+        }
     </style>
 </head>
 <body>
     <div id="lobby">
         <h1>🏆 BATTLE ROYALE SE ZOMBIE 🏆</h1>
         <p>Vyber si, jak chceš hrát!</p>
-        <button onclick="startSingleplayer()">🎯 SINGLEPLAYER</button>
+        <div id="singleplayerOptions">
+            <label for="playerName">Tvé herní jméno:</label>
+            <input id="playerName" type="text" placeholder="Zadej jméno" maxlength="20" value="Hráč">
+            <label for="difficultySingle">Obtížnost:</label>
+            <select id="difficultySingle">
+                <option value="easy">Snadná</option>
+                <option value="medium">Střední</option>
+                <option value="hard">Těžká</option>
+            </select>
+            <br>
+            <button onclick="startSingleplayer()">🎯 SINGLEPLAYER</button>
+        </div>
         <button onclick="showMultiplayerOptions()">👥 MULTIPLAYER (max 4 hráči)</button>
         <div id="multiplayerOptions" style="display: none;">
             <h3>Vytvoř nebo připoj se do hry</h3>
+            <div id="hostOptions" style="display: none;">
+                <label for="hostPlayerName">Tvé herní jméno:</label>
+                <input id="hostPlayerName" type="text" placeholder="Zadej jméno" maxlength="20" value="Host">
+                <label for="difficultyMulti">Obtížnost:</label>
+                <select id="difficultyMulti">
+                    <option value="easy">Snadná</option>
+                    <option value="medium">Střední</option>
+                    <option value="hard">Těžká</option>
+                </select>
+                <label for="numBots">Počet spojeneckých vojáků:</label>
+                <select id="numBots">
+                    <option value="5">5</option>
+                    <option value="8">8</option>
+                    <option value="12">12</option>
+                    <option value="15">15</option>
+                </select>
+            </div>
             <button onclick="createRoom()">📡 VYTVORIT HRU</button>
             <div style="margin-top: 15px;">
                 <input id="roomIdInput" type="text" placeholder="Zadej ID hry (např. ABC123)" maxlength="6">
@@ -124,7 +164,7 @@
             <div id="roomIdDisplay"></div>
             <div id="roomInfo"></div>
             <div id="statusMessage"></div>
-            <button onclick="startGameManually()" style="background: #4CAF50;">▶️ START HRY (pouze host)</button> <!-- 🆕 Přidáno tlačítko pro manuální start -->
+            <button onclick="startGameManually()" style="background: #4CAF50;">▶️ START HRY (pouze host)</button>
             <button onclick="backToLobby()" style="background: #ff4444;">⬅️ ZPĚT DO LOBBY</button>
         </div>
     </div>
@@ -188,13 +228,17 @@
             lastZoneShrink: 0,
             safeZone: { x: WORLD_WIDTH/2, y: WORLD_HEIGHT/2, radius: 600 },
             zoneDamage: 2,
-            camera: { x: 0, y: 0 }
+            camera: { x: 0, y: 0 },
+            zombieHealthMultiplier: 1  // 🆕 Nový: multiplikátor pro zombie health
         };
         let isMultiplayer = false;
         let roomId = null;
         let playerId = null;
         let socket = null;
         let gameRunning = false;
+        let playerName = 'Hráč';  // 🆕 Výchozí jméno
+        let difficulty = 'easy';   // 🆕 Výchozí obtížnost
+        let numAlliedBots = 8;    // 🆕 Výchozí počet botů pro multiplayer
 
         // Input
         const keys = {};
@@ -202,7 +246,9 @@
 
         // === LOBBY FUNKCE ===
         function startSingleplayer() {
-            console.log('🎯 Spouštím singleplayer...');
+            playerName = document.getElementById('playerName').value.trim() || 'Hráč';
+            difficulty = document.getElementById('difficultySingle').value;
+            console.log('🎯 Spouštím singleplayer... Jméno:', playerName, 'Obtížnost:', difficulty);
             isMultiplayer = false;
             lobbyEl.style.display = 'none';
             gameContainerEl.style.display = 'block';
@@ -212,27 +258,32 @@
         function showMultiplayerOptions() {
             document.getElementById('multiplayerOptions').style.display = 'block';
             if (!socket) {
-                socket = io();  // 🆕 Explicitní URL pro připojení k serveru
+                socket = io('http://localhost:3000');
                 setupSocketListeners();
             }
         }
 
         function createRoom() {
-            socket.emit('createRoom');
+            playerName = document.getElementById('hostPlayerName').value.trim() || 'Host';
+            difficulty = document.getElementById('difficultyMulti').value;
+            numAlliedBots = parseInt(document.getElementById('numBots').value);
+            document.getElementById('hostOptions').style.display = 'none';  // Skryt po výběru
+            socket.emit('createRoom', { playerName, difficulty, numBots: numAlliedBots });
             document.getElementById('statusMessage').textContent = 'Vytvářím místnost...';
         }
 
         function joinRoom() {
             const inputRoomId = document.getElementById('roomIdInput').value.trim().toUpperCase();
-            if (inputRoomId) {
-                socket.emit('joinRoom', inputRoomId);
+            playerName = prompt('Zadej své herní jméno:') || 'Hráč';  // 🆕 Input pro jméno při join
+            if (inputRoomId && playerName) {
+                socket.emit('joinRoom', { roomId: inputRoomId, playerName });
                 document.getElementById('statusMessage').textContent = 'Připojuji se...';
             } else {
-                document.getElementById('statusMessage').textContent = 'Zadej ID hry!';
+                document.getElementById('statusMessage').textContent = 'Zadej ID hry a jméno!';
             }
         }
 
-        function startGameManually() {  // 🆕 Funkce pro manuální start hry
+        function startGameManually() {
             if (socket) {
                 socket.emit('startGame');
                 document.getElementById('statusMessage').textContent = 'Spouštím hru...';
@@ -247,6 +298,7 @@
             gameContainerEl.style.display = 'none';
             lobbyEl.style.display = 'block';
             document.getElementById('multiplayerOptions').style.display = 'none';
+            document.getElementById('hostOptions').style.display = 'none';
             if (socket) {
                 socket.disconnect();
                 socket = null;
@@ -255,15 +307,16 @@
 
         function setupSocketListeners() {
             socket.on('connect', () => {
-                console.log('Klient připojen k serveru!');  // 🆕 Debug log pro připojení
+                console.log('Klient připojen k serveru!');
             });
 
             socket.on('connect_error', (err) => {
-                console.error('Připojení selhalo:', err);  // 🆕 Debug log pro chyby připojení
+                console.error('Připojení selhalo:', err);
             });
 
             socket.on('roomCreated', (data) => {
                 roomId = data.roomId;
+                playerId = socket.id;
                 document.getElementById('roomIdDisplay').innerHTML = `<strong>ID hry: ${roomId}</strong><br>Pošli přátelům! Čekám na hráče...`;
                 updateRoomInfo(data.players);
                 document.getElementById('statusMessage').textContent = '';
@@ -287,13 +340,14 @@
                 document.getElementById('statusMessage').textContent = `Hráč odešel! Hráči: ${Object.keys(data.players).length}/4`;
             });
 
-            // ✅ OPRAVENÁ FUNKCE PRO GAMESTART
             socket.on('gameStart', (gameData) => {
                 console.log('🚀 GAME START přijato:', Object.keys(gameData));
                 isMultiplayer = true;
                 playerId = socket.id;
 
-                // ✅ Nastav kompletní gameState ze serveru
+                // 🆕 Nastav multiplikátor z dat ze serveru
+                gameState.zombieHealthMultiplier = gameData.zombieHealthMultiplier || 1;
+
                 gameState = {
                     players: gameData.players || {},
                     bots: gameData.bots || [],
@@ -321,28 +375,24 @@
                 gameLoop();
             });
 
-            // ✅ OPRAVENÁ ČÁST KLIENTSKÉHO KÓDU PRO GAMEUPDATE
             socket.on('gameUpdate', (updatedState) => {
                 if (isMultiplayer) {
                     console.log('🎮 Přijat gameUpdate:', Object.keys(updatedState));
 
-                    // Aktualizuj všechny game objekty
                     gameState.bullets = updatedState.bullets || [];
                     gameState.zombies = updatedState.zombies || [];
                     gameState.particles = updatedState.particles || [];
                     gameState.bots = updatedState.bots || [];
-                    gameState.obstacles = updatedState.obstacles || gameState.obstacles;
+                    gameState.obstacles = updatedState.obstacles || gameState.obstacles;  // 🆕 OPRAVA: Aktualizuj obstacles
                     gameState.safeZone = updatedState.safeZone || gameState.safeZone;
                     gameState.helicopter = updatedState.helicopter;
                     gameState.score = updatedState.score || 0;
+                    gameState.zombieHealthMultiplier = updatedState.zombieHealthMultiplier || gameState.zombieHealthMultiplier;
 
-                    // 🆕 Ostatní hráči
-                    // ✅ OPRAVENO: Aktualizuj všechny hráče (včetně sebe)
                     Object.keys(updatedState.players || {}).forEach(id => {
                         if (!gameState.players[id]) {
                             gameState.players[id] = updatedState.players[id];
                         } else {
-                            // Aktualizuj pozici a stav
                             gameState.players[id].x = updatedState.players[id].x;
                             gameState.players[id].y = updatedState.players[id].y;
                             gameState.players[id].health = updatedState.players[id].health;
@@ -351,7 +401,6 @@
                         }
                     });
 
-                    // Odstraň hráče, kteří už nejsou v updatu (odpojeni/mrtví)
                     Object.keys(gameState.players).forEach(id => {
                         if (id !== playerId && !updatedState.players[id]) {
                             delete gameState.players[id];
@@ -363,7 +412,6 @@
                     console.log('🧟 Zombie:', gameState.zombies.length);
                 }
 
-                // 🆕 Vlastní pozice (přepíše predikci)
                 if (updatedState.ownPlayer) {
                     if (gameState.players[playerId]) {
                         gameState.players[playerId].x = updatedState.ownPlayer.x;
@@ -381,31 +429,29 @@
                 document.getElementById('statusMessage').textContent = msg;
             });
 
-            // 🆕 PŘIDÁNO: Restart handler
             socket.on('gameRestarted', (data) => {
                 console.log('🔄 Restartuji hru...');
                 gameState = data.gameState;
+                gameState.zombieHealthMultiplier = data.zombieHealthMultiplier || 1;
                 Object.keys(data.players).forEach(id => {
                     if (id !== playerId) {
                         gameState.players[id] = data.players[id];
                     } else {
-                        // Aktualizuj vlastní pozici
                         gameState.players[id].x = data.players[id].x;
                         gameState.players[id].y = data.players[id].y;
                         gameState.players[id].health = data.players[id].health;
                     }
                 });
-                gameState.bots = data.bots || []; // 🆕 Boty
+                gameState.bots = data.bots || [];
+                gameState.obstacles = data.obstacles || [];  // 🆕 OPRAVA: Aktualizuj obstacles při restartu
                 gameRunning = true;
                 gameOverEl.style.display = 'none';
             });
 
-            // 🆕 PŘIDÁNO: Auto-start countdown
             socket.on('autoStartCountdown', (data) => {
                 document.getElementById('statusMessage').textContent = `Hra začne za ${data.countdown} sekund!`;
             });
 
-            // 🆕 PŘIDÁNO: Zprávy ze serveru
             socket.on('message', (msg) => {
                 messageEl.textContent = msg;
             });
@@ -426,6 +472,14 @@
         function initSingleplayer() {
             console.log('🎯 Inicializuji singleplayer...');
 
+            // 🆕 Nastav multiplikátor podle obtížnosti
+            switch(difficulty) {
+                case 'medium': gameState.zombieHealthMultiplier = 2; break;
+                case 'hard': gameState.zombieHealthMultiplier = 3; break;
+                default: gameState.zombieHealthMultiplier = 1; break;
+            }
+            console.log('🆕 Zombie health multiplier:', gameState.zombieHealthMultiplier);
+
             // Reset gameState
             gameState = {
                 players: {},
@@ -442,10 +496,11 @@
                 lastZoneShrink: Date.now(),
                 safeZone: { x: WORLD_WIDTH/2 + Math.random() * 200 - 100, y: WORLD_HEIGHT/2 + Math.random() * 200 - 100, radius: 600 },
                 zoneDamage: 2,
-                camera: { x: 0, y: 0 }
+                camera: { x: 0, y: 0 },
+                zombieHealthMultiplier: gameState.zombieHealthMultiplier
             };
 
-            // Spawn hráče
+            // Spawn hráče s jménem
             playerId = 'player1';
             gameState.players[playerId] = {
                 x: WORLD_WIDTH / 2,
@@ -456,7 +511,7 @@
                 maxHealth: 100,
                 speed: 4,
                 color: '#00ff00',
-                name: 'Ty',
+                name: playerName,
                 lastShot: 0
             };
 
@@ -519,19 +574,17 @@
             renderMinimap();
 
             if (isMultiplayer) {
-                // Pošli input na server
                 socket.emit('playerInput', { keys, mouse, playerId, timestamp: Date.now() });
             }
 
             requestAnimationFrame(gameLoop);
         }
 
-        // 🆕 UPRACENÁ UPDATE FUNKCE
+        // 🆕 OPRAVA: Lokální kolize i v multiplayeru pro plynulejší pohyb
         function update() {
             if (!gameState.players[playerId]) return;
             const player = gameState.players[playerId];
 
-            // === POHYB HRÁČE ===
             let newX = player.x;
             let newY = player.y;
             if (keys['w']) newY -= player.speed;
@@ -539,30 +592,22 @@
             if (keys['a']) newX -= player.speed;
             if (keys['d']) newX += player.speed;
 
-            // 🆕 V MULTIPLAYERU: Lokální predikce (server to pak přepíše)
-            if (isMultiplayer) {
+            // 🆕 OPRAVA: Lokální kolize v multiplayeru (pro plynulejší pohyb, server to pak validuje)
+            const collisionRect = { x: newX, y: newY, width: player.width, height: player.height };
+            if (!checkCollisionWithObstacles(collisionRect)) {
                 player.x = newX;
                 player.y = newY;
-            } else {
-                // SINGLEPLAYER: Kolize kontrola
-                if (!checkCollisionWithObstacles({x: newX, y: newY, width: player.width, height: player.height})) {
-                    player.x = newX;
-                    player.y = newY;
-                }
             }
 
             player.x = Math.max(0, Math.min(WORLD_WIDTH - player.width, player.x));
             player.y = Math.max(0, Math.min(WORLD_HEIGHT - player.height, player.y));
 
-            // Aktualizace kamery
             updateCamera();
 
-            // === STŘELBA ===
             if (mouse.pressed && Date.now() - player.lastShot > 150) {
                 if (!isMultiplayer) {
                     shootTowardsMouse(player);
                 } else {
-                    // Pošli střelbu na server
                     const mouseWorldX = mouse.x + gameState.camera.x;
                     const mouseWorldY = mouse.y + gameState.camera.y;
                     socket.emit('shoot', { playerId, mouseWorldX, mouseWorldY, timestamp: Date.now() });
@@ -570,14 +615,9 @@
                 player.lastShot = Date.now();
             }
 
-            // === SINGLEPLAYER LOGIKA (pouze singleplayer) ===
             if (!isMultiplayer) {
                 updateSingleplayer();
-
-                // === ZÓNOVÉ POŠKOZENÍ HRÁČE ===
                 applyZoneDamage(player);
-
-                // === GAME OVER CHECK ===
                 if (player.health <= 0) {
                     endGame('Jsi mrtvý! Game Over!');
                 }
@@ -586,9 +626,7 @@
             updateUI();
         }
 
-        // 🆕 SINGLEPLAYER LOGIKA (beze změny)
         function updateSingleplayer() {
-            // Update botů
             gameState.bots = gameState.bots.filter(bot => {
                 aiMove(bot);
                 if (Date.now() - bot.lastShot > 1000) {
@@ -616,29 +654,23 @@
                 return bot.health > 0;
             });
 
-            // Update střel
             updateBullets();
 
-            // Spawn zombie horda
             if (Date.now() - gameState.lastZombieHorde > 12000) {
                 const hordeSize = Math.max(3, 8 - gameState.bots.length);
                 spawnZombieHorde(hordeSize);
                 gameState.lastZombieHorde = Date.now();
             }
 
-            // Zmenšování zóny
             if (Date.now() - gameState.lastZoneShrink > 10000) {
                 gameState.safeZone.radius = Math.max(gameState.safeZone.radius - 20, 100);
                 gameState.lastZoneShrink = Date.now();
             }
 
-            // Update zombie
             updateZombies();
 
-            // Update částic
             updateParticles();
 
-            // Helikoptéra
             const totalSoldiers = gameState.bots.length + (gameState.players[playerId].health > 0 ? 1 : 0);
             if (totalSoldiers === 1 && !gameState.helicopter) {
                 spawnHelicopter();
@@ -649,14 +681,12 @@
             }
         }
 
-        // 🆕 SINGLEPLAYER BULLETS (beze změny)
         function updateBullets() {
             gameState.bullets = gameState.bullets.filter(bullet => {
                 bullet.x += bullet.vx;
                 bullet.y += bullet.vy;
                 bullet.life--;
 
-                // Kolize s překážkami
                 for (let i = gameState.obstacles.length - 1; i >= 0; i--) {
                     const obstacle = gameState.obstacles[i];
                     if (obstacle.health > 0 && checkCollision(bullet, obstacle)) {
@@ -669,7 +699,6 @@
                     }
                 }
 
-                // Kolize se zombie
                 for (let i = gameState.zombies.length - 1; i >= 0; i--) {
                     if (checkCollision(bullet, gameState.zombies[i])) {
                         gameState.zombies[i].health -= bullet.damage || 10;
@@ -686,7 +715,6 @@
             });
         }
 
-        // 🆕 SINGLEPLAYER ZOMBIES (beze změny)
         function updateZombies() {
             gameState.zombies = gameState.zombies.filter(zombie => {
                 const target = findNearestSoldier(zombie);
@@ -704,14 +732,12 @@
                     }
                 }
 
-                // Kolize s hráčem
                 const player = gameState.players[playerId];
                 if (checkCollision(player, zombie)) {
                     player.health -= zombie.damage || 1;
                     createExplosion(player.x, player.y, '#00ff00');
                 }
 
-                // Kolize s boty
                 gameState.bots.forEach(bot => {
                     if (checkCollision(bot, zombie)) {
                         bot.health -= zombie.damage || 1;
@@ -743,24 +769,20 @@
             gameState.camera.y = Math.max(0, Math.min(WORLD_HEIGHT - CANVAS_HEIGHT, gameState.camera.y));
         }
 
-        // 🆕 UPRACENÁ RENDER FUNKCE - BOTY I V MULTIPLAYERU
         function render() {
             ctx.clearRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
             ctx.save();
             ctx.translate(-gameState.camera.x, -gameState.camera.y);
 
-            // Pozadí
             ctx.fillStyle = '#2d5a27';
             ctx.fillRect(0, 0, WORLD_WIDTH, WORLD_HEIGHT);
 
-            // Safe zone
             ctx.beginPath();
             ctx.arc(gameState.safeZone.x, gameState.safeZone.y, gameState.safeZone.radius, 0, Math.PI * 2);
             ctx.strokeStyle = '#00ff00';
             ctx.lineWidth = 3;
             ctx.stroke();
 
-            // Překážky
             gameState.obstacles.forEach(obstacle => {
                 if (obstacle.health > 0) {
                     ctx.fillStyle = obstacle.color;
@@ -770,7 +792,6 @@
                 }
             });
 
-            // Bunkry
             gameState.bunkers.forEach(bunker => {
                 ctx.fillStyle = bunker.color;
                 ctx.fillRect(bunker.x, bunker.y, bunker.width, bunker.height);
@@ -778,27 +799,23 @@
                 ctx.fillRect(bunker.x + 20, bunker.y + bunker.height - 10, 20, 10);
             });
 
-            // Hráči
             Object.keys(gameState.players).forEach(id => {
                 const p = gameState.players[id];
                 if (p && p.health > 0) {
                     ctx.fillStyle = id === playerId ? '#00ff00' : p.color || '#ff0000';
                     ctx.fillRect(p.x, p.y, p.width, p.height);
 
-                    // Health bar
                     ctx.fillStyle = '#ff0000';
                     ctx.fillRect(p.x, p.y - 8, p.width, 3);
                     ctx.fillStyle = '#00ff00';
                     ctx.fillRect(p.x, p.y - 8, p.width * (p.health / p.maxHealth), 3);
 
-                    // Jméno
                     ctx.fillStyle = '#ffffff';
                     ctx.font = '12px monospace';
                     ctx.fillText(p.name || 'Hráč', p.x, p.y - 12);
                 }
             });
 
-            // 🆕 BOTY - TEĎ I V MULTIPLAYERU!
             gameState.bots.forEach(bot => {
                 if (bot.health > 0) {
                     ctx.fillStyle = bot.color;
@@ -813,13 +830,11 @@
                 }
             });
 
-            // Střely
             gameState.bullets.forEach(bullet => {
                 ctx.fillStyle = '#ffff00';
                 ctx.fillRect(bullet.x, bullet.y, 4, 4);
             });
 
-            // Zombie
             gameState.zombies.forEach(zombie => {
                 if (zombie.health > 0) {
                     ctx.fillStyle = zombie.color;
@@ -831,7 +846,6 @@
                 }
             });
 
-            // Helikoptéra
             if (gameState.helicopter) {
                 ctx.fillStyle = '#0000ff';
                 ctx.fillRect(gameState.helicopter.x, gameState.helicopter.y, 60, 60);
@@ -841,7 +855,6 @@
                 ctx.fillText('🚁', gameState.helicopter.x + 25, gameState.helicopter.y + 35);
             }
 
-            // Částice
             gameState.particles.forEach(particle => {
                 ctx.globalAlpha = particle.life / 30;
                 ctx.fillStyle = particle.color;
@@ -852,13 +865,11 @@
             ctx.restore();
         }
 
-        // 🆕 UPRACENÝ MINI-MAP - BOTY I V MULTIPLAYERU
         function renderMinimap() {
             minimapCtx.clearRect(0, 0, 150, 150);
             minimapCtx.fillStyle = 'rgba(0,0,0,0.7)';
             minimapCtx.fillRect(0, 0, 150, 150);
 
-            // Safe zone
             minimapCtx.beginPath();
             minimapCtx.arc(
                 (gameState.safeZone.x / WORLD_WIDTH) * 150,
@@ -871,7 +882,6 @@
             minimapCtx.lineWidth = 2;
             minimapCtx.stroke();
 
-            // Hráč
             if (gameState.players[playerId]) {
                 const player = gameState.players[playerId];
                 minimapCtx.fillStyle = '#00ff00';
@@ -883,7 +893,6 @@
                 );
             }
 
-            // Ostatní hráči
             Object.keys(gameState.players).forEach(id => {
                 if (id !== playerId && gameState.players[id]) {
                     minimapCtx.fillStyle = gameState.players[id].color || '#ff0000';
@@ -896,7 +905,6 @@
                 }
             });
 
-            // 🆕 BOTY - TEĎ I V MULTIPLAYERU!
             gameState.bots.forEach(bot => {
                 minimapCtx.fillStyle = '#00cc00';
                 minimapCtx.fillRect(
@@ -907,7 +915,6 @@
                 );
             });
 
-            // Zombie
             gameState.zombies.forEach(zombie => {
                 minimapCtx.fillStyle = '#ff4444';
                 minimapCtx.fillRect(
@@ -918,7 +925,6 @@
                 );
             });
 
-            // Helikoptéra
             if (gameState.helicopter) {
                 minimapCtx.fillStyle = '#0000ff';
                 minimapCtx.fillRect(
@@ -930,12 +936,10 @@
             }
         }
 
-        // === HERNI FUNKCE (bez změny) ===
         function generateObstaclesAndBunkers() {
             gameState.obstacles = [];
             gameState.bunkers = [];
 
-            // Překážky
             for (let i = 0; i < 40; i++) {
                 let x, y, width, height;
                 do {
@@ -948,7 +952,6 @@
                 gameState.obstacles.push({ x, y, width, height, color: '#8B4513', health: 150, maxHealth: 150 });
             }
 
-            // Bunkry
             for (let i = 0; i < 4; i++) {
                 let x, y;
                 do {
@@ -960,8 +963,9 @@
             }
         }
 
+        // 🆕 Upravený spawnBots pro multiplayer (použije numAlliedBots pokud je multiplayer)
         function spawnBots() {
-            const numBots = Math.floor(Math.random() * 6) + 8;
+            let numBots = isMultiplayer ? numAlliedBots : Math.floor(Math.random() * 6) + 8;
             gameState.bots = [];
             for (let i = 0; i < numBots; i++) {
                 let x, y;
@@ -984,8 +988,10 @@
                     name: `Voják ${i + 1}`
                 });
             }
+            console.log('🤖 Spawnováno botů:', numBots);
         }
 
+        // 🆕 Upravený spawnZombieHorde s multiplikátorem
         function spawnZombieHorde(count) {
             for (let i = 0; i < count; i++) {
                 const side = Math.floor(Math.random() * 4);
@@ -1000,8 +1006,8 @@
                     x, y,
                     width: 15,
                     height: 15,
-                    health: 50,
-                    maxHealth: 50,
+                    health: 50 * gameState.zombieHealthMultiplier,  // 🆕 Aplikovat multiplikátor
+                    maxHealth: 50 * gameState.zombieHealthMultiplier,
                     speed: 0.8 + Math.random() * 0.6,
                     color: `hsl(${Math.random() * 30 + 180}, 70%, 40%)`,
                     damage: 1
@@ -1102,7 +1108,6 @@
             let nearest = null;
             let minDist = Infinity;
 
-            // Hráč
             const player = gameState.players[playerId];
             if (player && player.health > 0) {
                 const dist = Math.hypot(player.x - zombie.x, player.y - zombie.y);
@@ -1112,7 +1117,6 @@
                 }
             }
 
-            // Boty
             gameState.bots.forEach(bot => {
                 if (bot.health > 0) {
                     const dist = Math.hypot(bot.x - zombie.x, bot.y - zombie.y);
@@ -1142,8 +1146,8 @@
                 x, y,
                 width: 30,
                 height: 30,
-                health: 200,
-                maxHealth: 200,
+                health: 200 * gameState.zombieHealthMultiplier,  // 🆕 Aplikovat multiplikátor i zde
+                maxHealth: 200 * gameState.zombieHealthMultiplier,
                 speed: 1.5 + Math.random() * 0.5,
                 color: '#ff0000',
                 damage: 2
@@ -1175,13 +1179,12 @@
             return gameState.obstacles.some(obstacle => obstacle.health > 0 && checkCollision(rect, obstacle) );
         }
 
-        // 🆕 UPRACENÝ UPDATE UI
         function updateUI() {
             const player = gameState.players[playerId];
             if (player) {
                 healthFill.style.width = Math.max(0, (player.health / player.maxHealth * 100)) + '%';
                 scoreEl.textContent = gameState.score;
-                botsEl.textContent = gameState.bots.length; // 🆕 Vždy zobrazuj boty (i v multiplayeru)
+                botsEl.textContent = gameState.bots.length;
                 zombiesEl.textContent = gameState.zombies.length;
             }
         }
@@ -1210,7 +1213,11 @@
             }
         }
 
-        // === SPAUŠTĚNÍ ===
+        // 🆕 Inicializace lobby - zobraz singleplayer options
+        document.addEventListener('DOMContentLoaded', () => {
+            document.getElementById('hostOptions').style.display = 'block';  // Zobraz host options při show multiplayer
+        });
+
         console.log('🎮 Battle Royale hra načtena!');
         console.log('💡 Klikni SINGLEPLAYER pro start');
         console.log('💡 WASD = pohyb, MYŠ = střelba');
