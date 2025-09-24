@@ -7,9 +7,13 @@ const app = express();
 const server = http.createServer(app);
 const io = socketIo(server, {
     cors: {
-        origin: "*",
-        methods: ["GET", "POST"]
-    }
+        origin: "*",  // 🆕 Nech "*" pro všechny, ale pro produkci přidej tvůj Render URL: "https://tvoje-hra.onrender.com"
+        methods: ["GET", "POST"],
+        credentials: true
+    },
+    transports: ['websocket', 'polling'],  // 🆕 Prioritizuj WebSocket, polling jako fallback
+    pingTimeout: 60000,  // 🆕 Zvýš timeout pro Render (pomalé spojení)
+    pingInterval: 25000
 });
 
 // === KONFIGURACE ===
